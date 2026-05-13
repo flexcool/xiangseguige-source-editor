@@ -23,12 +23,8 @@ import {
 } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { json } from "@codemirror/lang-json";
-import { oneDark } from "@codemirror/theme-one-dark";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import {
-  searchKeymap,
-  highlightSelectionMatches,
-} from "@codemirror/search";
+import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import {
   bracketMatching,
   foldGutter,
@@ -77,7 +73,6 @@ onMounted(() => {
           ...completionKeymap,
         ]),
         json(),
-        oneDark,
         EditorView.updateListener.of((update: ViewUpdate) => {
           if (update.docChanged && !props.readonly) {
             emit("update:modelValue", update.state.doc.toString());
@@ -136,6 +131,6 @@ watch(
 }
 :deep(.cm-activeLineGutter),
 :deep(.cm-activeLine) {
-  background: rgba(108, 143, 255, 0.05) !important;
+  background: var(--accent-light) !important;
 }
 </style>
