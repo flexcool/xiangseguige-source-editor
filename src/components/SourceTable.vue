@@ -20,12 +20,38 @@
         <!-- Batch actions (visible when items selected) -->
         <template v-if="selected.size > 0">
           <span class="batch-hint">已选 {{ selected.size }} 条</span>
-          <button class="btn btn-xs btn-success" @click="batchEnable">批量启用</button>
-          <button class="btn btn-xs btn-warn" @click="batchDisable">批量禁用</button>
-          <button class="btn btn-xs btn-danger" @click="batchDelete">批量删除</button>
-          <button class="btn btn-xs btn-muted" @click="selected.clear()">取消选择</button>
+          <button
+            class="btn btn-xs btn-success"
+            @click="batchEnable"
+          >
+            批量启用
+          </button>
+          <button
+            class="btn btn-xs btn-warn"
+            @click="batchDisable"
+          >
+            批量禁用
+          </button>
+          <button
+            class="btn btn-xs btn-danger"
+            @click="batchDelete"
+          >
+            批量删除
+          </button>
+          <button
+            class="btn btn-xs btn-muted"
+            @click="selected.clear()"
+          >
+            取消选择
+          </button>
         </template>
         <template v-else>
+          <button
+            class="btn btn-xs btn-primary"
+            @click="openAdd"
+          >
+            + 新增书源
+          </button>
           <button
             class="btn btn-xs btn-success"
             @click="store.setAllEnabled(true)"
@@ -103,8 +129,9 @@
               />
             </td>
             <td
-              class="td-name"
+              class="td-name td-name-link"
               :title="row.sourceName"
+              @click="openDetail(row._key)"
             >
               {{ row.sourceName }}
             </td>
@@ -178,7 +205,11 @@
         下一页 ›
       </button>
       <span class="page-size-label">每页</span>
-      <select class="page-size-select" v-model="pageSize" @change="resetPage">
+      <select
+        class="page-size-select"
+        v-model="pageSize"
+        @change="resetPage"
+      >
         <option :value="10">10</option>
         <option :value="20">20</option>
         <option :value="50">50</option>
@@ -187,11 +218,53 @@
       <span class="page-size-label">条</span>
     </div>
   </div>
+
+  <!-- Detail Drawer: edit single source JSON -->
+  <SourceDrawer v-model="detailKey" :title="detailTitle">
+    <textarea
+      v-if="detailKey !== null"
+      v-model="detailJson"
+      class="detail-json"
+      spellcheck="false"
+    />
+    <template #footer>
+      <button class="btn btn-sm btn-muted" @click="detailKey = null">取消</button>
+      <button class="btn btn-sm btn-primary" @click="saveDetail">保存</button>
+    </template>
+  </SourceDrawer>
+
+  <!-- Add Drawer: new source form -->
+  <SourceDrawer v-model="addOpen" title="新增书源">
+    <form class="add-form" @submit.prevent="saveAdd">
+      <label class="form-row">
+        <span>书源名称 <em>*</em></span>
+        <input v-model="addForm.sourceName" placeholder="如：起点中文网" required />
+      </label>
+      <label class="form-row">
+        <span>书源网址 <em>*</em></span>
+        <input v-model="addForm.sourceUrl" placeholder="https://" required />
+      </label>
+      <label class="form-row">
+        <span>权重</span>
+        <input v-model.number="addForm.weight" type="number" placeholder="0" />
+      </label>
+      <label class="form-row form-row-check">
+        <input type="checkbox" v-model="addForm.enable" />
+        <span>启用</span>
+      </label>
+      <div class="form-hint">其余字段可保存后点击书源名称在 JSON 编辑器中完善</div>
+    </form>
+    <template #footer>
+      <button type="button" class="btn btn-sm btn-muted" @click="addOpen = null">取消</button>
+      <button type="button" class="btn btn-sm btn-primary" @click="saveAdd">创建</button>
+    </template>
+  </SourceDrawer>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useEditorStore } from "@/stores/editor";
+import SourceDrawer from "@/components/SourceDrawer.vue";
 import type { BookSource } from "@/lib/types";
 
 const store = useEditorStore();
@@ -303,6 +376,57 @@ function formatDate(v: string | number | undefined): string {
 
 function confirmDelete(key: string, name: string) {
   if (confirm(`确定删除书源「${name}」？`)) store.deleteSource(key);
+}
+
+// ── Detail Drawer ────────────────────────────────────────────
+const detailKey = ref<string | null>(null);
+const detailJson = ref("");
+const detailTitle = computed(() => {
+  if (!detailKey.value) return "";
+  const s = store.sources.find((x) => x._key === detailKey.value);
+  return s ? `编辑：${s.sourceName}` : "编辑书源";
+});
+
+function openDetail(key: string) {
+  const s = store.sources.find((x) => x._key === key);
+  if (!s) return;
+  detailJson.value = JSON.stringify(s._raw, null, 2);
+  detailKey.value = key;
+}
+
+function saveDetail() {
+  if (!detailKey.value) return;
+  try {
+    const obj = JSON.parse(detailJson.value) as Record<string, unknown>;
+    store.updateSource(detailKey.value, obj);
+    detailKey.value = null;
+  } catch {
+    alert("JSON 格式有误，请检查后再保存");
+  }
+}
+
+// ── Add Drawer ───────────────────────────────────────────────
+const addOpen = ref<null | true>(null);
+const addForm = ref({ sourceName: "", sourceUrl: "", weight: 0, enable: true });
+
+function openAdd() {
+  addForm.value = { sourceName: "", sourceUrl: "", weight: 0, enable: true };
+  addOpen.value = true;
+}
+
+function saveAdd() {
+  if (!addForm.value.sourceName.trim() || !addForm.value.sourceUrl.trim()) {
+    alert("书源名称和网址为必填项");
+    return;
+  }
+  store.addSource({
+    sourceName: addForm.value.sourceName.trim(),
+    sourceUrl: addForm.value.sourceUrl.trim(),
+    weight: addForm.value.weight,
+    enable: addForm.value.enable,
+    lastModifyTime: Math.floor(Date.now() / 1000),
+  });
+  addOpen.value = null;
 }
 </script>
 
@@ -526,7 +650,77 @@ tr:hover td {
   margin-right: 4px;
 }
 
-.row-selected td {
-  background: rgba(0, 0, 0, 0.03);
+.td-name-link {
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.td-name-link:hover {
+  text-decoration-color: var(--accent);
+}
+
+.detail-json {
+  width: 100%;
+  height: calc(100vh - 180px);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface2);
+  color: var(--text);
+  resize: none;
+  outline: none;
+}
+.detail-json:focus {
+  border-color: var(--accent);
+}
+
+.add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text2);
+}
+.form-row span em {
+  color: var(--red);
+  font-style: normal;
+}
+.form-row input[type="text"],
+.form-row input[type="number"],
+.form-row input:not([type="checkbox"]) {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.form-row input:focus {
+  border-color: var(--accent);
+}
+.form-row-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.form-hint {
+  font-size: 12px;
+  color: var(--text3);
+  padding: 8px 12px;
+  background: var(--surface2);
+  border-radius: 6px;
+  border-left: 3px solid var(--border);
 }
 </style>

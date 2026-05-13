@@ -216,6 +216,41 @@ export const useEditorStore = defineStore("editor", () => {
     syncSourcesToJson();
   }
 
+  function updateSource(key: string, raw: Record<string, unknown>) {
+    const s = sources.value.find((x) => x._key === key);
+    if (!s) return;
+    s._raw = raw;
+    s.sourceName = String(raw.sourceName ?? s.sourceName);
+    s.sourceUrl = String(raw.sourceUrl ?? s.sourceUrl);
+    s.enable = Boolean(raw.enable ?? s.enable);
+    s.weight = Number(raw.weight ?? s.weight);
+    s.lastModifyTime = (raw.lastModifyTime as string | number) ?? s.lastModifyTime;
+    syncSourcesToJson();
+    toast("已保存", "ok");
+  }
+
+  function addSource(data: {
+    sourceName: string;
+    sourceUrl: string;
+    weight: number;
+    enable: boolean;
+    lastModifyTime: number;
+  }) {
+    const raw: Record<string, unknown> = { ...data };
+    const key = `new-${Date.now()}`;
+    sources.value.unshift({
+      _key: key,
+      sourceName: data.sourceName,
+      sourceUrl: data.sourceUrl,
+      enable: data.enable,
+      weight: data.weight,
+      lastModifyTime: data.lastModifyTime,
+      _raw: raw,
+    });
+    syncSourcesToJson();
+    toast(`已创建书源「${data.sourceName}」`, "ok");
+  }
+
   return {
     xbsBuffer,
     xbsFileName,
@@ -243,5 +278,7 @@ export const useEditorStore = defineStore("editor", () => {
     deleteSource,
     setAllEnabled,
     setSourceEnabled,
+    updateSource,
+    addSource,
   };
 });
