@@ -208,6 +208,14 @@ export const useEditorStore = defineStore("editor", () => {
     );
   }
 
+  function setSourceEnabled(key: string, val: boolean) {
+    const s = sources.value.find((x) => x._key === key);
+    if (!s) return;
+    s.enable = val;
+    s._raw.enable = val;
+    syncSourcesToJson();
+  }
+
   return {
     xbsBuffer,
     xbsFileName,
@@ -234,5 +242,6 @@ export const useEditorStore = defineStore("editor", () => {
     toggleSource,
     deleteSource,
     setAllEnabled,
+    setSourceEnabled,
   };
 });

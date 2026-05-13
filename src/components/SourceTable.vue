@@ -17,18 +17,28 @@
         @input="resetPage"
       />
       <div class="s-actions">
-        <button
-          class="btn btn-xs btn-success"
-          @click="store.setAllEnabled(true)"
-        >
-          全部启用
-        </button>
-        <button
-          class="btn btn-xs btn-muted"
-          @click="store.setAllEnabled(false)"
-        >
-          全部禁用
-        </button>
+        <!-- Batch actions (visible when items selected) -->
+        <template v-if="selected.size > 0">
+          <span class="batch-hint">已选 {{ selected.size }} 条</span>
+          <button class="btn btn-xs btn-success" @click="batchEnable">批量启用</button>
+          <button class="btn btn-xs btn-warn" @click="batchDisable">批量禁用</button>
+          <button class="btn btn-xs btn-danger" @click="batchDelete">批量删除</button>
+          <button class="btn btn-xs btn-muted" @click="selected.clear()">取消选择</button>
+        </template>
+        <template v-else>
+          <button
+            class="btn btn-xs btn-success"
+            @click="store.setAllEnabled(true)"
+          >
+            全部启用
+          </button>
+          <button
+            class="btn btn-xs btn-muted"
+            @click="store.setAllEnabled(false)"
+          >
+            全部禁用
+          </button>
+        </template>
       </div>
     </div>
 
@@ -37,6 +47,15 @@
       <table>
         <thead>
           <tr>
+            <th class="th-check">
+              <input
+                type="checkbox"
+                :checked="allPageSelected"
+                :indeterminate="somePageSelected"
+                @change="toggleSelectPage"
+                title="全选当前页"
+              />
+            </th>
             <th
               @click="setSort('sourceName')"
               :class="sortClass('sourceName')"
@@ -74,7 +93,15 @@
           <tr
             v-for="row in pagedRows"
             :key="row._key"
+            :class="{ 'row-selected': selected.has(row._key) }"
           >
+            <td class="td-check">
+              <input
+                type="checkbox"
+                :checked="selected.has(row._key)"
+                @change="toggleRow(row._key)"
+              />
+            </td>
             <td
               class="td-name"
               :title="row.sourceName"
@@ -121,7 +148,7 @@
           </tr>
           <tr v-if="filteredRows.length === 0">
             <td
-              colspan="6"
+              colspan="7"
               class="empty"
             >
               未找到匹配书源
@@ -132,10 +159,7 @@
     </div>
 
     <!-- Pagination -->
-    <div
-      v-if="totalPages > 1"
-      class="pagination"
-    >
+    <div class="pagination">
       <button
         class="btn btn-xs btn-muted"
         :disabled="page <= 1"
@@ -153,6 +177,14 @@
       >
         下一页 ›
       </button>
+      <span class="page-size-label">每页</span>
+      <select class="page-size-select" v-model="pageSize" @change="resetPage">
+        <option :value="10">10</option>
+        <option :value="20">20</option>
+        <option :value="50">50</option>
+        <option :value="100">100</option>
+      </select>
+      <span class="page-size-label">条</span>
     </div>
   </div>
 </template>
@@ -168,7 +200,8 @@ const search = ref("");
 const sortKey = ref<keyof BookSource>("sourceName");
 const sortDir = ref<1 | -1>(1);
 const page = ref(1);
-const PAGE_SIZE = 20;
+const pageSize = ref(20);
+const selected = ref(new Set<string>());
 
 function setSort(key: keyof BookSource) {
   if (sortKey.value === key) sortDir.value = sortDir.value === 1 ? -1 : 1;
@@ -210,17 +243,60 @@ const filteredRows = computed(() => {
 });
 
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredRows.value.length / PAGE_SIZE)),
+  Math.max(1, Math.ceil(filteredRows.value.length / pageSize.value)),
 );
 
 const pagedRows = computed(() => {
-  const start = (page.value - 1) * PAGE_SIZE;
-  return filteredRows.value.slice(start, start + PAGE_SIZE);
+  const start = (page.value - 1) * pageSize.value;
+  return filteredRows.value.slice(start, start + pageSize.value);
 });
 
-function formatDate(v: string | number): string {
+const allPageSelected = computed(
+  () =>
+    pagedRows.value.length > 0 &&
+    pagedRows.value.every((r) => selected.value.has(r._key)),
+);
+const somePageSelected = computed(
+  () =>
+    !allPageSelected.value &&
+    pagedRows.value.some((r) => selected.value.has(r._key)),
+);
+
+function toggleRow(key: string) {
+  const s = new Set(selected.value);
+  s.has(key) ? s.delete(key) : s.add(key);
+  selected.value = s;
+}
+function toggleSelectPage() {
+  const s = new Set(selected.value);
+  if (allPageSelected.value) {
+    pagedRows.value.forEach((r) => s.delete(r._key));
+  } else {
+    pagedRows.value.forEach((r) => s.add(r._key));
+  }
+  selected.value = s;
+}
+function batchEnable() {
+  selected.value.forEach((k) => store.setSourceEnabled(k, true));
+  selected.value = new Set();
+}
+function batchDisable() {
+  selected.value.forEach((k) => store.setSourceEnabled(k, false));
+  selected.value = new Set();
+}
+function batchDelete() {
+  if (!confirm(`确定删除选中的 ${selected.value.size} 条书源？`)) return;
+  selected.value.forEach((k) => store.deleteSource(k));
+  selected.value = new Set();
+}
+
+function formatDate(v: string | number | undefined): string {
   if (!v) return "—";
-  const d = new Date(typeof v === "number" ? v : Number(v) || v);
+  let ms = typeof v === "number" ? v : Number(v);
+  if (isNaN(ms)) return String(v);
+  // lastModifyTime is in seconds if value < 1e11 (year ~5138); convert to ms
+  if (ms < 1e11) ms *= 1000;
+  const d = new Date(ms);
   if (isNaN(d.getTime())) return String(v);
   return d.toLocaleDateString("zh-CN");
 }
@@ -409,7 +485,7 @@ tr:hover td {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 8px;
   padding: 10px 16px;
   border-top: 1px solid var(--border);
   background: var(--surface2);
@@ -419,5 +495,38 @@ tr:hover td {
   font-size: 13px;
   color: var(--text3);
 }
+.page-size-label {
+  font-size: 13px;
+  color: var(--text3);
+}
+.page-size-select {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.page-size-select:focus {
+  border-color: var(--accent);
+}
 
+.th-check,
+.td-check {
+  width: 36px;
+  text-align: center;
+  padding: 0 8px;
+}
+
+.batch-hint {
+  font-size: 12px;
+  color: var(--text2);
+  margin-right: 4px;
+}
+
+.row-selected td {
+  background: rgba(0, 0, 0, 0.03);
+}
 </style>
