@@ -64,6 +64,13 @@
           >
             全部禁用
           </button>
+          <span class="s-sep"></span>
+          <button
+            class="btn btn-xs btn-muted"
+            @click="checkerOpen = !checkerOpen"
+          >
+            🔍 有效性检测
+          </button>
         </template>
       </div>
     </div>
@@ -219,6 +226,13 @@
     </div>
   </div>
 
+  <!-- Checker Panel -->
+  <CheckerPanel
+    :open="checkerOpen"
+    :sources="store.sources"
+    @close="checkerOpen = false"
+  />
+
   <!-- Detail Drawer: edit single source JSON -->
   <SourceDrawer
     v-model="detailKey"
@@ -313,9 +327,11 @@
 import { ref, computed } from "vue";
 import { useEditorStore } from "@/stores/editor";
 import SourceDrawer from "@/components/SourceDrawer.vue";
+import CheckerPanel from "@/components/CheckerPanel.vue";
 import type { BookSource } from "@/lib/types";
 
 const store = useEditorStore();
+const checkerOpen = ref(false);
 
 const search = ref("");
 const sortKey = ref<keyof BookSource>("sourceName");
@@ -534,6 +550,14 @@ function saveAdd() {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+  align-items: center;
+}
+.s-sep {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 2px;
 }
 
 .table-scroll {
