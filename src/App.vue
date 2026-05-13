@@ -84,34 +84,28 @@
               ⬇ 导出 JSON
             </button>
           </template>
-          <template v-if="store.activeTab === 'sources' && store.sourceCount > 0">
+          <template
+            v-if="store.activeTab === 'sources' && store.sourceCount > 0"
+          >
             <span class="topbar-sep"></span>
-            <button
-              class="btn btn-sm btn-primary"
-              @click="store.downloadXbs"
-            >
-              ⬇ 导出 XBS（全部）
-            </button>
-            <button
-              class="btn btn-sm btn-success"
-              @click="store.downloadJson"
-            >
-              ⬇ 导出 JSON（全部）
-            </button>
-            <button
-              class="btn btn-sm btn-muted"
-              :disabled="store.enabledCount === 0"
-              @click="store.downloadXbsEnabled"
-            >
-              ⬇ 导出 XBS（仅启用）
-            </button>
-            <button
-              class="btn btn-sm btn-muted"
-              :disabled="store.enabledCount === 0"
-              @click="store.downloadJsonEnabled"
-            >
-              ⬇ 导出 JSON（仅启用）
-            </button>
+            <!-- XBS Split Button -->
+            <div class="split-btn" ref="xbsRef">
+              <button class="btn btn-sm btn-primary split-main" @click="store.downloadXbs">⬇ XBS</button>
+              <button class="btn btn-sm btn-primary split-arrow" @click.stop="xbsOpen = !xbsOpen">▾</button>
+              <div v-if="xbsOpen" class="split-menu">
+                <button class="split-item" @click="store.downloadXbs; xbsOpen = false">全部导出</button>
+                <button class="split-item" :disabled="store.enabledCount === 0" @click="store.downloadXbsEnabled; xbsOpen = false">仅导出启用（{{ store.enabledCount }} 条）</button>
+              </div>
+            </div>
+            <!-- JSON Split Button -->
+            <div class="split-btn" ref="jsonRef">
+              <button class="btn btn-sm btn-success split-main" @click="store.downloadJson">⬇ JSON</button>
+              <button class="btn btn-sm btn-success split-arrow" @click.stop="jsonOpen = !jsonOpen">▾</button>
+              <div v-if="jsonOpen" class="split-menu">
+                <button class="split-item" @click="store.downloadJson; jsonOpen = false">全部导出</button>
+                <button class="split-item" :disabled="store.enabledCount === 0" @click="store.downloadJsonEnabled; jsonOpen = false">仅导出启用（{{ store.enabledCount }} 条）</button>
+              </div>
+            </div>
           </template>
         </div>
       </header>
@@ -147,10 +141,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import { useEditorStore } from "@/stores/editor";
 import EditorView from "@/views/EditorView.vue";
 import SourceTable from "@/components/SourceTable.vue";
+
+const xbsOpen = ref(false);
+const jsonOpen = ref(false);
+const xbsRef = ref<HTMLElement | null>(null);
+const jsonRef = ref<HTMLElement | null>(null);
+
+function onDocClick(e: MouseEvent) {
+  if (xbsRef.value && !xbsRef.value.contains(e.target as Node)) xbsOpen.value = false;
+  if (jsonRef.value && !jsonRef.value.contains(e.target as Node)) jsonOpen.value = false;
+}
+onMounted(() => document.addEventListener("click", onDocClick));
+onUnmounted(() => document.removeEventListener("click", onDocClick));
+
 import ToastContainer from "@/components/ToastContainer.vue";
 
 const store = useEditorStore();
@@ -407,6 +414,53 @@ body {
   height: 20px;
   background: var(--border);
   margin: 0 4px;
+}
+
+/* Split button */
+.split-btn {
+  position: relative;
+  display: inline-flex;
+}
+.split-main {
+  border-radius: 6px 0 0 6px !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.25) !important;
+}
+.split-arrow {
+  border-radius: 0 6px 6px 0 !important;
+  padding: 6px 8px !important;
+  font-size: 11px !important;
+  min-width: 24px;
+}
+.split-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+}
+.split-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: background 0.1s;
+}
+.split-item:hover:not(:disabled) {
+  background: var(--surface2);
+}
+.split-item:disabled {
+  color: var(--text3);
+  cursor: not-allowed;
 }
 
 /* ── Content Area ── */

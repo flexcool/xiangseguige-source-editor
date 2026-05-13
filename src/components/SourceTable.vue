@@ -220,7 +220,10 @@
   </div>
 
   <!-- Detail Drawer: edit single source JSON -->
-  <SourceDrawer v-model="detailKey" :title="detailTitle">
+  <SourceDrawer
+    v-model="detailKey"
+    :title="detailTitle"
+  >
     <textarea
       v-if="detailKey !== null"
       v-model="detailJson"
@@ -228,35 +231,80 @@
       spellcheck="false"
     />
     <template #footer>
-      <button class="btn btn-sm btn-muted" @click="detailKey = null">取消</button>
-      <button class="btn btn-sm btn-primary" @click="saveDetail">保存</button>
+      <button
+        class="btn btn-sm btn-muted"
+        @click="detailKey = null"
+      >
+        取消
+      </button>
+      <button
+        class="btn btn-sm btn-primary"
+        @click="saveDetail"
+      >
+        保存
+      </button>
     </template>
   </SourceDrawer>
 
   <!-- Add Drawer: new source form -->
-  <SourceDrawer v-model="addOpen" title="新增书源">
-    <form class="add-form" @submit.prevent="saveAdd">
+  <SourceDrawer
+    v-model="addOpen"
+    title="新增书源"
+  >
+    <form
+      class="add-form"
+      @submit.prevent="saveAdd"
+    >
       <label class="form-row">
         <span>书源名称 <em>*</em></span>
-        <input v-model="addForm.sourceName" placeholder="如：起点中文网" required />
+        <input
+          v-model="addForm.sourceName"
+          placeholder="如：起点中文网"
+          required
+        />
       </label>
       <label class="form-row">
         <span>书源网址 <em>*</em></span>
-        <input v-model="addForm.sourceUrl" placeholder="https://" required />
+        <input
+          v-model="addForm.sourceUrl"
+          placeholder="https://"
+          required
+        />
       </label>
       <label class="form-row">
         <span>权重</span>
-        <input v-model.number="addForm.weight" type="number" placeholder="0" />
+        <input
+          v-model.number="addForm.weight"
+          type="number"
+          placeholder="0"
+        />
       </label>
       <label class="form-row form-row-check">
-        <input type="checkbox" v-model="addForm.enable" />
+        <input
+          type="checkbox"
+          v-model="addForm.enable"
+        />
         <span>启用</span>
       </label>
-      <div class="form-hint">其余字段可保存后点击书源名称在 JSON 编辑器中完善</div>
+      <div class="form-hint">
+        其余字段可保存后点击书源名称在 JSON 编辑器中完善
+      </div>
     </form>
     <template #footer>
-      <button type="button" class="btn btn-sm btn-muted" @click="addOpen = null">取消</button>
-      <button type="button" class="btn btn-sm btn-primary" @click="saveAdd">创建</button>
+      <button
+        type="button"
+        class="btn btn-sm btn-muted"
+        @click="addOpen = null"
+      >
+        取消
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm btn-primary"
+        @click="saveAdd"
+      >
+        创建
+      </button>
     </template>
   </SourceDrawer>
 </template>

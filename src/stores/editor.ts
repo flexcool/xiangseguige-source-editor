@@ -152,7 +152,11 @@ export const useEditorStore = defineStore("editor", () => {
       return;
     }
     const text = JSON.stringify(enabled, null, 2);
-    downloadBlob(text, `${jsonFileName.value || "sources"}-enabled.json`, "application/json");
+    downloadBlob(
+      text,
+      `${jsonFileName.value || "sources"}-enabled.json`,
+      "application/json",
+    );
     toast(`已导出 ${enabled.length} 个启用书源`, "ok");
   }
 
@@ -258,7 +262,8 @@ export const useEditorStore = defineStore("editor", () => {
     s.sourceUrl = String(raw.sourceUrl ?? s.sourceUrl);
     s.enable = Boolean(raw.enable ?? s.enable);
     s.weight = Number(raw.weight ?? s.weight);
-    s.lastModifyTime = (raw.lastModifyTime as string | number) ?? s.lastModifyTime;
+    s.lastModifyTime =
+      (raw.lastModifyTime as string | number) ?? s.lastModifyTime;
     syncSourcesToJson();
     toast("已保存", "ok");
   }
