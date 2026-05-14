@@ -108,6 +108,8 @@ AI 会依次完成 7 个步骤：
 生成完成后，复制 JSON 手动导入到香色闺阁 App，或下载后在工具中加密为 `.xbs`。
 
 > ⚠️ 生成的书源规则基于 AI 对真实 HTML 的分析，准确率较高但不保证 100% 可用，建议在香色闺阁中测试验证后再使用。
+>
+> 如需手动编写或调整规则，参阅 [香色闺阁书源规则.md](香色闺阁书源规则.md) 了解完整字段说明。
 
 ---
 
@@ -124,7 +126,9 @@ AI 会依次完成 7 个步骤：
 
 香色闺阁（xiangseguige）是一款主流小说 & 漫画阅读 App，使用自定义书源规则（`.xbs` 格式）聚合各小说网站内容。本工具用于辅助制作和管理这些书源规则。
 
-书源制作参考：[UFOAlastor/xiangseguige](https://github.com/UFOAlastor/xiangseguige)
+**书源规则文档**：[香色闺阁书源规则.md](香色闺阁书源规则.md) — 基于真实 IPA 源码解析，涵盖所有字段定义、选择器语法、requestInfo/@js: 参数、分页、WebView 等完整规范
+
+其他参考：[UFOAlastor/xiangseguige](https://github.com/UFOAlastor/xiangseguige)
 
 ---
 

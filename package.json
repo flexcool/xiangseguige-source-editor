@@ -17,6 +17,7 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.26.3",
+    "marked": "^18.0.3",
     "pinia": "^2.1.7",
     "vue": "^3.4.0"
   },

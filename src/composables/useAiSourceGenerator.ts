@@ -102,7 +102,9 @@ function findBookUrl(searchHtml: string, siteUrl: string): string | null {
       score += 5;
     if (/\/\d{3,}(\/|\.html?)?$/.test(href)) score += 4;
     if (/\.html?$/.test(href)) score += 1;
-    if (/\/(search|login|register|user|category|tag|page|sort|order)/i.test(href))
+    if (
+      /\/(search|login|register|user|category|tag|page|sort|order)/i.test(href)
+    )
       score -= 20;
     if (/\/(about|contact|help|faq|privacy|terms)/i.test(href)) score -= 10;
     if (/[?&]page?=/i.test(href)) score -= 5;
@@ -163,104 +165,225 @@ function extractAdCandidates(chapterHtml: string): string[] {
 
 function buildSystemPrompt(): string {
   return `你是香色闺阁（XBS）书源规则专家。根据用户提供的真实小说网站 HTML，生成完整的 XBS 书源 JSON。
+所有字段名和语法必须严格遵守以下规范（来源：真实 XBS 书源 demo.json）。
 
-━━━ 完整格式模板 ━━━
+━━━ 顶层结构模板 ━━━
 
 {
   "sourceName": "网站名称",
   "sourceUrl": "https://www.example.com",
   "enable": 1,
   "weight": "9000",
-  "lastModifyTime": 0,
+  "miniAppVersion": "2.53.2",
+  "lastModifyTime": "0",
+  "desc": "",
+  "password": "",
+  "sourceType": "text",
   "httpHeaders": "",
-
-  "searchBook": {
-    "actionID": "searchBook",
-    "parserID": "DOM",
-    "responseFormatType": "html",
-    "host": "https://www.example.com",
-    "requestInfo": "https://www.example.com/search?q=%@keyWord&page=%@pageIndex",
-    "list": "//ul[@class='book-list']//li",
-    "bookName": "//h3/a/text()",
-    "author": "//span[@class='author']/text()",
-    "detailUrl": "//h3/a/@href",
-    "cover": "//img/@src",
-    "desc": "//p[@class='intro']/text()",
-    "state": "//span[@class='status']/text()",
-    "validConfig": ""
-  },
-
-  "bookDetail": {
-    "actionID": "bookDetail",
-    "parserID": "DOM",
-    "responseFormatType": "html",
-    "host": "https://www.example.com",
-    "bookName": "//meta[@property='og:novel:book_name']/@content",
-    "author": "//meta[@property='og:novel:author']/@content",
-    "cover": "//meta[@property='og:image']/@content",
-    "desc": "//meta[@property='og:description']/@content",
-    "cat": "//meta[@property='og:novel:category']/@content",
-    "lastChapter": "//meta[@property='og:novel:latest_chapter_name']/@content",
-    "state": "//meta[@property='og:novel:status']/@content",
-    "updateTime": "//span[@class='update-time']/text()",
-    "wordCount": "//span[@class='wordcount']/text()",
-    "validConfig": ""
-  },
-
-  "chapterList": {
-    "actionID": "chapterList",
-    "parserID": "DOM",
-    "responseFormatType": "html",
-    "host": "https://www.example.com",
-    "list": "//div[@id='list']//dd",
-    "title": "//a/text()",
-    "url": "//a/@href",
-    "validConfig": ""
-  },
-
-  "chapterContent": {
-    "actionID": "chapterContent",
-    "parserID": "DOM",
-    "responseFormatType": "html",
-    "host": "https://www.example.com",
-    "content": "//div[@id='content']",
-    "title": "//h1[@class='title']/text()",
-    "filter": "广告词1&&广告词2",
-    "validConfig": ""
-  },
-
-  "shupingList": {}, "shudanList": {}, "bookWorld": {},
-  "shupingHome": {}, "shudanDetail": {}, "relatedWord": {}, "searchShudan": {}
+  "searchBook": { ... },
+  "bookDetail": { ... },
+  "chapterList": { ... },
+  "chapterContent": { ... },
+  "bookWorld": {},
+  "shudanList": {},
+  "shudanDetail": { "actionID": "shudanDetail", "parserID": "DOM" },
+  "shupingList": { "actionID": "shupingList", "parserID": "DOM" },
+  "shupingHome": { "actionID": "shupingHome", "parserID": "DOM" },
+  "searchShudan": { "actionID": "searchShudan", "parserID": "DOM" },
+  "relatedWord": { "actionID": "relatedWord", "parserID": "DOM" }
 }
 
-━━━ 关键规则 ━━━
+sourceType 可选值：text（默认小说）/ comic（漫画）/ audio（听书）/ video（视频）
 
-【选择器格式】
-- XPath（推荐）：以 // 开头。取文本：末尾加 /text()；取属性：末尾加 /@attrName
-- CSS：不以 // 开头；取属性在末尾加 @attrName
-- JS 后处理：规则末尾加 " || @js: return result.replace(...);"
-- 动态请求：requestInfo 以 "@js:" 开头，返回 {url:..., POST:bool, httpParams:{...}}
+━━━ 子规则公共字段 ━━━
 
-【searchBook】
-- requestInfo：%@keyWord = 搜索词，%@pageIndex = 页码（从 1 开始）
-- POST 搜索示例：@js: return {url:config.host+'/search',POST:true,httpParams:{keyword:params.keyWord}};
-- list 选择器选中每本书的容器（li 或 div）
-- bookName/author/detailUrl/cover/desc/state：在 list 容器内部的相对选择器
+每个子规则（searchBook/bookDetail/chapterList/chapterContent）都包含：
+  "actionID": "<与键名相同>",
+  "parserID": "DOM",
+  "responseFormatType": "html",
+  "host": "https://www.example.com",
+  "validConfig": ""
 
-【bookDetail】
-- 优先使用 og:novel:* meta 标签系列（是小说站标配）
-- 没有则用 DOM 选择器
+━━━ searchBook ━━━
 
-【chapterList】
-- 如章节列表和书籍详情在同一页面 → 不填 requestInfo
-- 如是独立页面 → requestInfo 填 URL，可用 @bookUrl@ 代表书籍详情 URL
+{
+  "actionID": "searchBook",
+  "parserID": "DOM",
+  "responseFormatType": "html",
+  "host": "https://www.example.com",
+  "requestInfo": "https://www.example.com/search?q=%@keyWord&page=%@pageIndex",
+  "list": "//ul[@class='book-list']//li",
+  "bookName": "//h3/a/text()",
+  "author": "//span[@class='author']/text()",
+  "detailUrl": "//h3/a/@href",
+  "cover": "//img/@src",
+  "desc": "//p[@class='intro']/text()",
+  "status": "//span[@class='status']/text()",
+  "cat": "//span[@class='cat']/text()",
+  "wordCount": "//span[@class='words']/text()",
+  "lastChapterTitle": "//span[@class='last']/text()",
+  "moreKeys": { "pageSize": 10, "maxPage": 3 },
+  "validConfig": ""
+}
 
-【chapterContent.filter】
-- 只支持纯文本精确匹配，多个词用 && 分隔
-- 必须从提供的真实正文 HTML 中提取实际出现的广告行，不要凭空猜测
+requestInfo 占位符：%@keyWord（搜索词）、%@pageIndex（页码，从 1 开始）
+POST 搜索示例：
+  "requestInfo": "@js:\\nlet url=config.host+'/search.html';\\nreturn {url:url,POST:true,httpParams:{keyword:params.keyWord},forbidCookie:true,cacheTime:3600};"
+cover 字段若需由 detailUrl 计算（无直接 img）：
+  "cover": "//h3/a/@href ||@js:\\nlet id=result.match(/(\\\\d+)/)[0];return config.host+'/files/image/'+id+'s.jpg'"
 
-【httpHeaders】
-- 如需 Cookie/UA：{"Cookie":"xxx","User-Agent":"Mozilla/5.0..."}
+━━━ bookDetail ━━━
+
+{
+  "actionID": "bookDetail",
+  "parserID": "DOM",
+  "responseFormatType": "html",
+  "host": "https://www.example.com",
+  "bookName": "//meta[@property='og:novel:book_name']/@content",
+  "author": "//meta[@property='og:novel:author']/@content",
+  "cover": "//meta[@property='og:image']/@content",
+  "desc": "//meta[@property='og:description']/@content",
+  "cat": "//meta[@property='og:novel:category']/@content",
+  "lastChapterTitle": "//meta[@property='og:novel:latest_chapter_name']/@content",
+  "status": "//meta[@property='og:novel:status']/@content",
+  "wordCount": "//span[@class='wordcount']/text()",
+  "validConfig": ""
+}
+
+优先使用 og:novel:* meta 标签（小说站标配）。字段名注意：
+  ✓ lastChapterTitle（正确）  ✗ lastChapter（错误）
+  ✓ status（正确）            ✗ state（错误）
+
+━━━ chapterList ━━━
+
+{
+  "actionID": "chapterList",
+  "parserID": "DOM",
+  "responseFormatType": "html",
+  "host": "https://www.example.com",
+  "list": "//div[@id='list']//dd",
+  "title": "//a/text()",
+  "url": "//a/@href",
+  "nextPageUrl": "//a[text()='下一页']/@href",
+  "moreKeys": { "maxPage": 500, "skipCount": 0 },
+  "validConfig": ""
+}
+
+- 如章节列表和书籍详情在同一页面 → 不填 requestInfo（App 自动用 detailUrl）
+- 如是独立目录页 → 填 requestInfo（URL 字符串，不支持 @bookUrl@ 占位符）
+- 章节 url 是相对路径时，在选择器末尾加 JS 后处理：
+    "url": "//a/@href ||@js:\\nreturn params.responseUrl.replace(/\\\\/[^\\\\/]*$/, '') + '/' + result;"
+  或直接拼接 host：
+    "url": "//a/@href ||@js:\\nreturn config.host + result;"
+- nextPageUrl：目录有多页时填写（XPath 选取"下一页"链接）
+- moreKeys.maxPage：目录最大翻页次数（通常 500）
+- moreKeys.skipCount：跳过列表开头 N 个非章节项（去干扰行）
+
+━━━ chapterContent ━━━
+
+{
+  "actionID": "chapterContent",
+  "parserID": "DOM",
+  "responseFormatType": "html",
+  "host": "https://www.example.com",
+  "content": "//div[@id='content']",
+  "nextPageUrl": "//a[text()='下一页']/@href",
+  "moreKeys": { "maxPage": 6 },
+  "validConfig": ""
+}
+
+- content 是正文容器选择器（选整个 div，App 自动提取文本）
+- 广告过滤：在 content 选择器末尾使用 |@js: 进行 replace 处理（不存在 filter 字段！）：
+    "content": "//div[@id='content'] |@js:\\nreturn result.replace(/广告词.*/g,'').replace(/请收藏.*/g,'');"
+  注意：|@js: 是过滤（不备选），||@js: 是有备选时的后处理，两者用途不同
+- nextPageUrl：章节有多页时填写
+- moreKeys.maxPage：章节最大翻页次数（通常 3~6）
+- 若需 WebView 渲染（反爬严重站点）：
+    "requestInfo": "@js:\\nreturn {url:result,webView:'',webViewSkipUrls:['hm.baidu.com'],webViewJsDelay:2,forbidCookie:true};"
+
+━━━ 选择器语法完整说明（只用 XPath，不用 CSS）━━━
+
+基础：
+  //div[@id='list']/dl/dd        节点路径
+  //a/text()                     取文本内容
+  //img/@src                     取属性值
+  //meta[@property='og:image']/@content
+
+|| 双管道：备选（第一个无结果时尝试第二个）
+  "list": "//*[@class='grid']//tr || //*[@class='listBox']//li"
+
+||@js: 双管道接 JS（有备选 + 后处理，result 为 XPath 结果字符串）
+  "cover": "//img/@data-src ||@js:\\nreturn result || params.responseUrl;"
+
+|@replace: 单管道文本替换（去除结果中的指定前缀）
+  "status": "//p[@class='info']/span[3]|@replace:状态："
+
+|@js: 单管道接 JS（仅处理，不备选，result 为 XPath 结果字符串）
+  "content": "//div[@id='content'] |@js:\\nreturn result.replace(/\\\\n/g,'\\n');"
+
+━━━ @js: requestInfo 返回对象字段 ━━━
+
+{
+  url: String,            // 请求 URL（必填）
+  POST: Boolean,          // true = POST，默认 GET
+  httpParams: Object,     // 请求参数（GET 追加 / POST body）
+  httpHeaders: Object,    // 请求头
+  forbidCookie: Boolean,  // 禁止 Cookie
+  cacheTime: Number,      // 缓存秒数
+  webView: String,        // 启用 WebView（填 "" 或 true）
+  webViewSkipUrls: Array, // WebView 黑名单 URL
+  webViewJsDelay: Number  // WebView 等待 JS 秒数
+}
+
+@js: 中可用变量：config.host、config.httpHeaders、params.keyWord、
+params.pageIndex、params.filters、params.responseUrl、result（上步结果）
+
+━━━ httpHeaders ━━━
+
+顶层 httpHeaders 对所有子规则生效，子规则级 httpHeaders 覆盖顶层：
+  "httpHeaders": {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+    "Referer": "https://www.example.com"
+  }
+不需要时填 ""（空字符串）。
+
+━━━ JSParser（复杂站点自定义解析，searchBook 专用）━━━
+
+当站点搜索结果结构复杂、XPath 难以覆盖时，在 searchBook 中使用 JSParser 字段编写完整 JS 函数：
+
+"JSParser": "function parse(config, params, result) {\\n  let list = [];\\n  let xml = params.nativeTool.XPathParserWithSource(result);\\n  let items = xml.queryWithXPath(\\"//div[@class='book-list']//li\\");\\n  for (let i in items) {\\n    list.push({\\n      bookName: items[i].queryWithXPath(\\"//h3/a/text()\\")[0].content(),\\n      detailUrl: items[i].queryWithXPath(\\"//h3/a/@href\\")[0].content(),\\n      author:    items[i].queryWithXPath(\\"//span[@class='author']/text()\\")[0].content(),\\n      cover:     items[i].queryWithXPath(\\"//img/@src\\")[0].content(),\\n      status:    items[i].queryWithXPath(\\"//span[@class='status']/text()\\")[0].content()\\n    });\\n  }\\n  return { list };\\n}"
+
+JSParser 函数参数：config（站点配置）、params（含 nativeTool / responseUrl）、result（响应 HTML 字符串）
+params.nativeTool.XPathParserWithSource(html).queryWithXPath(xpath) 返回节点数组，每个节点有 .content() 方法
+
+━━━ bookWorld（分类/发现页，非必须，可留空 {}）━━━
+
+"bookWorld": {
+  "分类名": {
+    "actionID": "bookWorld",
+    "parserID": "DOM",
+    "responseFormatType": "html",
+    "host": "https://www.example.com",
+    "requestInfo": "https://www.example.com/list/%@filter/%@pageIndex.html",
+    "list": "//div[@class='book-list']//li",
+    "bookName": "//h3/a/text()",
+    "author": "//span[@class='author']/text()",
+    "cover": "//img/@src",
+    "detailUrl": "//h3/a/@href",
+    "status": "//span[@class='status']/text()",
+    "_sIndex": 1,
+    "moreKeys": {
+      "pageSize": "20",
+      "requestFilters": "玄幻::xuanhuan\\n仙侠::xianxia\\n言情::yanqing"
+    },
+    "validConfig": ""
+  }
+}
+
+requestFilters 三种格式（moreKeys.requestFilters）：
+  格式一 dict：{"榜单A": "url片段A", "榜单B": "url片段B"}   → value 直接替换 %@filter
+  格式二 array：[{"key":"cat","items":[{"title":"玄幻","value":"1"},...]}]  → @js: 中用 params.filters.cat
+  格式三 换行字符串："玄幻::1\\n仙侠::2\\n言情::3"    → value 替换 %@filter；多 key 时加 _keyName 行分隔
 
 ━━━ 输出要求 ━━━
 只输出一个合法 JSON 对象，不含任何解释文字、markdown 代码块或注释。`;
@@ -475,7 +598,9 @@ export function useAiSourceGenerator() {
       // ── Step 3: Chapter list ────────────────────────────
       setStep(3, { status: "running" });
       if (bookDetailHtml) {
-        if (/第[零一二三四五六七八九十百千\d]+章|第[一1]卷/.test(bookDetailHtml)) {
+        if (
+          /第[零一二三四五六七八九十百千\d]+章|第[一1]卷/.test(bookDetailHtml)
+        ) {
           chapterListHtml = bookDetailHtml;
           chapterListUrl = bookDetailUrl;
           setStep(3, { status: "done", detail: "与书籍详情同页面" });
@@ -520,8 +645,7 @@ export function useAiSourceGenerator() {
       setStep(4, { status: "running" });
       if (chapterListHtml) {
         try {
-          firstChapterUrl =
-            findFirstChapterUrl(chapterListHtml, siteUrl) ?? "";
+          firstChapterUrl = findFirstChapterUrl(chapterListHtml, siteUrl) ?? "";
           if (firstChapterUrl) {
             chapterHtml = await fetchPage(firstChapterUrl, proxy);
             adCandidates = extractAdCandidates(chapterHtml);
@@ -585,9 +709,10 @@ export function useAiSourceGenerator() {
       parts.push(`\n\n请根据以上真实页面 HTML 生成完整香色闺阁书源 JSON。
 注意：
 1. 所有选择器必须基于真实 HTML 推导，不要凭空猜测
-2. chapterContent.filter 必须使用正文 HTML 中实际存在的广告文字
+2. 正文广告过滤：在 content 选择器末尾用 |@js: 做 replace 处理，不存在 filter 字段
 3. 若章节列表与书籍详情同页，chapterList 不加 requestInfo 字段
-4. 若章节 URL 是相对路径，在 url 规则末尾补 " || @js: return '${base.origin}' + result;"`);
+4. 若章节 URL 是相对路径，在 url 规则末尾加 "||@js:\\nreturn config.host + result;" 或 "||@js:\\nreturn params.responseUrl.replace(/\\/[^\\/]*$/, '') + '/' + result;"
+5. 字段名：status（✓）不是 state（✗），lastChapterTitle（✓）不是 lastChapter（✗）`);
 
       let llmText = "";
       try {

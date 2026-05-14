@@ -209,6 +209,7 @@
             </button>
           </div>
         </div>
+        <DocsView v-show="store.activeTab === 'docs'" />
       </div>
     </div>
 
@@ -221,6 +222,7 @@ import { computed, ref, onMounted, onUnmounted } from "vue";
 import { useEditorStore } from "@/stores/editor";
 import EditorView from "@/views/EditorView.vue";
 import SourceTable from "@/components/SourceTable.vue";
+import DocsView from "@/views/DocsView.vue";
 
 const xbsOpen = ref(false);
 const jsonOpen = ref(false);
@@ -243,6 +245,7 @@ const store = useEditorStore();
 const navItems = [
   { key: "editor", icon: "⚡", label: "格式转换" },
   { key: "sources", icon: "📚", label: "书源管理" },
+  { key: "docs", icon: "📖", label: "规则文档" },
 ];
 
 const currentNavItem = computed(() =>

@@ -15,7 +15,7 @@ export const useEditorStore = defineStore("editor", () => {
   const sources = ref<BookSource[]>([]);
   const toasts = ref<ToastItem[]>([]);
   const isConverting = ref(false);
-  const activeTab = ref<"editor" | "sources">("editor");
+  const activeTab = ref<"editor" | "sources" | "docs">("editor");
 
   // ── Computed ───────────────────────────────────────
   const xbsSize = computed(() =>
