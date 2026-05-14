@@ -46,12 +46,12 @@
           </button>
         </template>
         <template v-else>
-          <button
+          <!-- <button
             class="btn btn-xs btn-primary"
             @click="openAdd"
           >
             + 新增书源
-          </button>
+          </button> -->
           <button
             class="btn btn-xs btn-success"
             @click="store.setAllEnabled(true)"

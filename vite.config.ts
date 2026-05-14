@@ -118,7 +118,7 @@ function fetchPageMiddleware(
   });
 }
 
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = process.env.NODE_ENV === "production";
 
 export default defineConfig({
   plugins: [

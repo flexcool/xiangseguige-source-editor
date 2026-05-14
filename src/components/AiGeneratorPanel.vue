@@ -27,9 +27,25 @@
             title="关闭"
             @click="$emit('close')"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <line x1="3" y1="3" x2="13" y2="13"/>
-              <line x1="13" y1="3" x2="3" y2="13"/>
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <line
+                x1="3"
+                y1="3"
+                x2="13"
+                y2="13"
+              />
+              <line
+                x1="13"
+                y1="3"
+                x2="3"
+                y2="13"
+              />
             </svg>
           </button>
         </div>
@@ -443,7 +459,10 @@ async function copyJson() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
   flex-shrink: 0;
 }
 .ai-close svg {
