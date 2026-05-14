@@ -118,6 +118,8 @@ function fetchPageMiddleware(
   });
 }
 
+const isProd = process.env.NODE_ENV === 'production';
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -128,7 +130,7 @@ export default defineConfig({
       },
     },
   ],
-  base: "./",
+  base: isProd ? "/xiangseguige-source-editor/" : "/",
   resolve: {
     alias: { "@": resolve(__dirname, "src") },
   },
