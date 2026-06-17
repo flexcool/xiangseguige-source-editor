@@ -62,7 +62,7 @@
               <input
                 v-model="localConfig.baseUrl"
                 class="ai-input"
-                placeholder="https://api.openai.com/v1"
+                placeholder="https://api.deepseek.com"
                 @blur="saveConfig"
               />
               <label class="field-label">API Key</label>
@@ -86,9 +86,27 @@
               <input
                 v-model="localConfig.model"
                 class="ai-input"
-                placeholder="gpt-4o"
+                placeholder="deepseek-v4-pro"
                 @blur="saveConfig"
               />
+              <label class="field-label">思考参数</label>
+              <select
+                v-model="localConfig.thinkingMode"
+                class="ai-input"
+                @change="saveConfig"
+              >
+                <option value="auto">自动兼容最高</option>
+                <option value="off">关闭扩展参数</option>
+              </select>
+              <select
+                v-if="localConfig.thinkingMode !== 'off'"
+                v-model="localConfig.reasoningEffort"
+                class="ai-input thinking-effort"
+                @change="saveConfig"
+              >
+                <option value="max">max</option>
+                <option value="high">high</option>
+              </select>
             </div>
 
             <!-- Proxy -->

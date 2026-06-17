@@ -67,6 +67,11 @@ interface Anchor {
   score: number;
 }
 
+interface SearchCandidate {
+  url: string;
+  note: string;
+}
+
 function resolveUrl(href: string, base: string): string {
   try {
     return new URL(href, base).href;
@@ -94,10 +99,141 @@ function collectAnchors(html: string): Array<{ href: string; text: string }> {
   return results;
 }
 
-function findBookUrl(searchHtml: string, siteUrl: string): string | null {
+function getAttr(tag: string, name: string): string {
+  const re = new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, "i");
+  return tag.match(re)?.[1]?.trim() ?? "";
+}
+
+function uniqueCandidates(candidates: SearchCandidate[]): SearchCandidate[] {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    if (seen.has(candidate.url)) return false;
+    seen.add(candidate.url);
+    return true;
+  });
+}
+
+function withQuery(url: string, key: string, value: string): string | null {
+  try {
+    const u = new URL(url);
+    u.searchParams.set(key, value);
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+function extractSearchFormHints(html: string, siteUrl: string): string[] {
+  const forms: string[] = [];
+  const re = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null && forms.length < 8) {
+    const attrs = m[1];
+    const body = m[2];
+    const action = getAttr(attrs, "action") || siteUrl;
+    const method = (getAttr(attrs, "method") || "GET").toUpperCase();
+    const names = Array.from(body.matchAll(/\bname=["']([^"']+)["']/gi))
+      .map((item) => item[1])
+      .filter(Boolean);
+    forms.push(
+      `${method} ${resolveUrl(action, siteUrl)} input=${names.join(",") || "未知"}`,
+    );
+  }
+  return forms;
+}
+
+function buildSearchCandidates(
+  homeHtml: string,
+  siteUrl: string,
+  bookName: string,
+): SearchCandidate[] {
+  const base = new URL(siteUrl);
+  const candidates: SearchCandidate[] = [
+    {
+      url: `${base.origin}/search.html?q=${encodeURIComponent(bookName)}`,
+      note: "常见 q 搜索",
+    },
+    {
+      url: `${base.origin}/search?q=${encodeURIComponent(bookName)}`,
+      note: "常见 /search",
+    },
+    {
+      url: `${base.origin}/search?key=${encodeURIComponent(bookName)}`,
+      note: "常见 key 搜索",
+    },
+    {
+      url: `${base.origin}/search?keyword=${encodeURIComponent(bookName)}`,
+      note: "常见 keyword 搜索",
+    },
+    {
+      url: `${base.origin}/search?searchkey=${encodeURIComponent(bookName)}`,
+      note: "常见 searchkey 搜索",
+    },
+    {
+      url: `${base.origin}/modules/article/search.php?searchkey=${encodeURIComponent(bookName)}`,
+      note: "杰奇/小说站常见搜索",
+    },
+    {
+      url: `${base.origin}/s?key=${encodeURIComponent(bookName)}`,
+      note: "常见 /s 搜索",
+    },
+    {
+      url: `${base.origin}/so/${encodeURIComponent(bookName)}.html`,
+      note: "常见 /so 静态搜索",
+    },
+    {
+      url: `${base.origin}/search/${encodeURIComponent(bookName)}/`,
+      note: "常见 path 搜索",
+    },
+  ];
+
+  const formRe = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
+  let formMatch: RegExpExecArray | null;
+  while ((formMatch = formRe.exec(homeHtml)) !== null) {
+    const attrs = formMatch[1];
+    const body = formMatch[2];
+    const action = resolveUrl(getAttr(attrs, "action") || siteUrl, siteUrl);
+    const names = Array.from(body.matchAll(/\bname=["']([^"']+)["']/gi)).map(
+      (item) => item[1],
+    );
+    const key =
+      names.find((name) =>
+        /search|keyword|key|wd|word|query|q|name|book/i.test(name),
+      ) ?? names[0];
+    if (!key) continue;
+    const url = withQuery(action, key, bookName);
+    if (url) candidates.unshift({ url, note: `首页搜索表单 ${key}` });
+  }
+
+  for (const anchor of collectAnchors(homeHtml)) {
+    if (!/(search|so|sousuo|查找|搜索)/i.test(anchor.href + anchor.text))
+      continue;
+    const url = resolveUrl(anchor.href, siteUrl);
+    for (const key of ["q", "keyword", "key", "searchkey", "wd", "word"]) {
+      const candidateUrl = withQuery(url, key, bookName);
+      if (candidateUrl) {
+        candidates.push({
+          url: candidateUrl,
+          note: `首页搜索链接补 ${key}`,
+        });
+      }
+    }
+  }
+
+  return uniqueCandidates(candidates);
+}
+
+function findBookUrl(
+  searchHtml: string,
+  searchUrl: string,
+  bookName: string,
+): string | null {
   const anchors = collectAnchors(searchHtml);
   const scored: Anchor[] = anchors.map(({ href, text }) => {
     let score = 0;
+    if (text.includes(bookName)) score += 12;
+    else if (bookName.length >= 2 && text.includes(bookName.slice(0, 2)))
+      score += 5;
     if (/\/(book|xs|novel|info|detail|view|article|read)\//i.test(href))
       score += 5;
     if (/\/\d{3,}(\/|\.html?)?$/.test(href)) score += 4;
@@ -115,10 +251,10 @@ function findBookUrl(searchHtml: string, siteUrl: string): string | null {
   scored.sort((a, b) => b.score - a.score);
   const best = scored.find((a) => a.score >= 3);
   if (!best) return null;
-  return resolveUrl(best.href, siteUrl);
+  return resolveUrl(best.href, searchUrl);
 }
 
-function findFirstChapterUrl(html: string, siteUrl: string): string | null {
+function findFirstChapterUrl(html: string, chapterListUrl: string): string | null {
   const anchors = collectAnchors(html);
   const scored: Anchor[] = anchors.map(({ href, text }) => {
     let score = 0;
@@ -133,7 +269,7 @@ function findFirstChapterUrl(html: string, siteUrl: string): string | null {
   scored.sort((a, b) => b.score - a.score);
   const best = scored.find((a) => a.score >= 5);
   if (!best) return null;
-  return resolveUrl(best.href, siteUrl);
+  return resolveUrl(best.href, chapterListUrl);
 }
 
 function extractAdCandidates(chapterHtml: string): string[] {
@@ -159,13 +295,292 @@ function extractAdCandidates(chapterHtml: string): string[] {
   return lines.filter((line) => adPatterns.some((p) => p.test(line)));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function getRule(
+  source: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | null {
+  const rule = source[key];
+  return isRecord(rule) ? rule : null;
+}
+
+function ensureRuleShell(
+  source: Record<string, unknown>,
+  key: string,
+  warnings: string[],
+) {
+  const rule = getRule(source, key);
+  if (!rule) return;
+  if (rule.actionID !== key) {
+    rule.actionID = key;
+    warnings.push(`${key}.actionID 已修正为 ${key}`);
+  }
+  if (!rule.parserID) rule.parserID = "DOM";
+  if (!rule.responseFormatType && key !== "relatedWord") {
+    rule.responseFormatType = "html";
+  }
+  if (rule.validConfig === undefined && key !== "relatedWord") {
+    rule.validConfig = "";
+  }
+}
+
+function validateGeneratedSource(
+  source: Record<string, unknown>,
+  base: URL,
+  siteUrl: string,
+): string[] {
+  const warnings: string[] = [];
+
+  if (!source.sourceName) {
+    source.sourceName = base.hostname;
+    warnings.push("sourceName 缺失，已用域名代替");
+  }
+  if (!source.sourceUrl) source.sourceUrl = siteUrl;
+  if (source.enable === undefined) source.enable = 1;
+  if (!source.weight) source.weight = "9000";
+  if (!source.miniAppVersion) source.miniAppVersion = "2.53.2";
+  if (!source.lastModifyTime) source.lastModifyTime = "0";
+  if (!source.sourceType) source.sourceType = "text";
+  if (source.httpHeaders === undefined) source.httpHeaders = "";
+
+  for (const key of [
+    "searchBook",
+    "bookDetail",
+    "chapterList",
+    "chapterContent",
+  ]) {
+    ensureRuleShell(source, key, warnings);
+  }
+
+  for (const key of [
+    "shudanDetail",
+    "shupingList",
+    "shupingHome",
+    "searchShudan",
+    "relatedWord",
+  ]) {
+    if (!isRecord(source[key])) {
+      source[key] = { actionID: key, parserID: "DOM" };
+      warnings.push(`${key} 缺失，已补默认空规则`);
+    } else {
+      ensureRuleShell(source, key, warnings);
+    }
+  }
+  if (!isRecord(source.bookWorld)) source.bookWorld = {};
+  if (!isRecord(source.shudanList)) source.shudanList = {};
+
+  for (const key of ["searchBook", "bookDetail"]) {
+    const rule = getRule(source, key);
+    if (!rule) continue;
+    if ("state" in rule) {
+      rule.status = rule.status ?? rule.state;
+      delete rule.state;
+      warnings.push(`${key}.state 已修正为 status`);
+    }
+    if ("lastChapter" in rule) {
+      rule.lastChapterTitle = rule.lastChapterTitle ?? rule.lastChapter;
+      delete rule.lastChapter;
+      warnings.push(`${key}.lastChapter 已修正为 lastChapterTitle`);
+    }
+  }
+
+  const bookDetail = getRule(source, "bookDetail");
+  const bookDetailUrlRule = String(bookDetail?.detailUrl ?? "");
+  if (
+    bookDetailUrlRule.includes("/@href") &&
+    !bookDetailUrlRule.includes("@js") &&
+    !bookDetailUrlRule.includes("http")
+  ) {
+    warnings.push("bookDetail.detailUrl 可能是相对链接，建议追加 ||@js: 基于 params.responseUrl 拼接");
+  }
+
+  const chapterContent = getRule(source, "chapterContent");
+  if (chapterContent && "filter" in chapterContent) {
+    warnings.push("chapterContent.filter 不是有效字段，请改到 content 的 |@js: 过滤中");
+  }
+
+  const chapterList = getRule(source, "chapterList");
+  const chapterUrlRule = String(chapterList?.url ?? "");
+  if (
+    chapterUrlRule.includes("/@href") &&
+    !chapterUrlRule.includes("@js") &&
+    !chapterUrlRule.includes("http")
+  ) {
+    warnings.push("chapterList.url 可能是相对链接，建议追加 ||@js: 基于 params.responseUrl 拼接");
+  }
+
+  const searchBook = getRule(source, "searchBook");
+  const searchDetailUrlRule = String(searchBook?.detailUrl ?? "");
+  if (
+    searchDetailUrlRule.includes("/@href") &&
+    !searchDetailUrlRule.includes("@js") &&
+    !searchDetailUrlRule.includes("http")
+  ) {
+    warnings.push("searchBook.detailUrl 可能是相对链接，建议追加 ||@js: 基于 params.responseUrl 拼接");
+  }
+
+  const requiredRules: Array<[string, string[]]> = [
+    ["searchBook", ["list", "detailUrl"]],
+    ["chapterList", ["list", "title", "url"]],
+    ["chapterContent", ["content"]],
+  ];
+  for (const [ruleName, fields] of requiredRules) {
+    const rule = getRule(source, ruleName);
+    if (!rule) continue;
+    for (const field of fields) {
+      if (rule[field] === undefined || rule[field] === "") {
+        warnings.push(`${ruleName}.${field} 缺失，可能无法正常抓取`);
+      }
+    }
+  }
+
+  return warnings;
+}
+
 // ──────────────────────────────────────────────────────────
 // LLM communication
 // ──────────────────────────────────────────────────────────
 
+type ChatMessage = {
+  role: "system" | "user";
+  content: string;
+};
+
+type ChatCompletionRequest = {
+  model: string;
+  messages: ChatMessage[];
+  temperature?: number;
+  stream: boolean;
+  thinking?: { type: "enabled" };
+  reasoning_effort?: "high" | "max";
+};
+
+type ChatCompletionDelta = {
+  content?: string;
+  reasoning_content?: string;
+};
+
+type ChatCompletionResponse = {
+  choices: Array<{
+    message?: {
+      content?: string;
+      reasoning_content?: string;
+    };
+    delta?: ChatCompletionDelta;
+  }>;
+};
+
+type StreamChunkKind = "content" | "reasoning" | "notice" | "reset";
+type RequestMode =
+  | { kind: "thinking"; effort: "high" | "max" }
+  | { kind: "thinkingOnly" }
+  | { kind: "reasoning"; effort: "high" | "max" }
+  | { kind: "plain"; temperature?: number };
+
+class LlmApiError extends Error {
+  constructor(
+    public status: number,
+    public responseText: string,
+  ) {
+    super(`LLM API 错误 ${status}: ${responseText.slice(0, 200)}`);
+  }
+}
+
+function buildRequestBody(
+  config: AiConfig,
+  systemPrompt: string,
+  userPrompt: string,
+  stream: boolean,
+  mode: RequestMode,
+): ChatCompletionRequest {
+  const body: ChatCompletionRequest = {
+    model: config.model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    stream,
+  };
+
+  if (mode.kind === "thinking") {
+    body.thinking = { type: "enabled" };
+    body.reasoning_effort = mode.effort;
+    return body;
+  }
+
+  if (mode.kind === "thinkingOnly") {
+    body.thinking = { type: "enabled" };
+    return body;
+  }
+
+  if (mode.kind === "reasoning") {
+    body.reasoning_effort = mode.effort;
+    return body;
+  }
+
+  if (mode.temperature !== undefined) {
+    body.temperature = mode.temperature;
+  }
+  return body;
+}
+
+function buildRequestModes(config: AiConfig): RequestMode[] {
+  if (config.thinkingMode === "off") {
+    return [{ kind: "plain", temperature: 0.2 }, { kind: "plain" }];
+  }
+
+  const efforts: Array<"high" | "max"> =
+    config.reasoningEffort === "max" ? ["max", "high"] : ["high"];
+
+  return [
+    ...efforts.map((effort) => ({ kind: "thinking" as const, effort })),
+    { kind: "thinkingOnly" },
+    ...efforts.map((effort) => ({ kind: "reasoning" as const, effort })),
+    { kind: "plain", temperature: 0.2 },
+    { kind: "plain" },
+  ];
+}
+
+function shouldRetryWithoutThinking(error: unknown): boolean {
+  if (!(error instanceof LlmApiError)) return false;
+  if (error.status < 400 || error.status >= 500) return false;
+
+  const text = error.responseText.toLowerCase();
+  return [
+    "thinking",
+    "reasoning_effort",
+    "response_format",
+    "temperature",
+    "unknown parameter",
+    "unsupported parameter",
+    "invalid parameter",
+    "unrecognized",
+    "未知参数",
+    "无效参数",
+    "不支持",
+    "not support",
+    "not supported",
+  ].some((marker) => text.includes(marker));
+}
+
 function buildSystemPrompt(): string {
   return `你是香色闺阁（XBS）书源规则专家。根据用户提供的真实小说网站 HTML，生成完整的 XBS 书源 JSON。
-所有字段名和语法必须严格遵守以下规范（来源：真实 XBS 书源 demo.json）。
+所有字段名和语法必须严格遵守以下规范（来源：真实 XBS 书源 demo.json 与香色闺阁规则文档）。
+
+━━━ 工作原则 ━━━
+
+1. 只根据用户提供的 HTML 与 URL 证据生成规则；没有证据的选择器不要猜。
+2. 优先生成最小可用的小说书源：searchBook、bookDetail、chapterList、chapterContent 必须尽量可用。
+3. bookWorld / 书单 / 书评 / relatedWord 只有在页面证据明确时才补全；否则输出空对象或默认空规则壳。
+4. 所有 DOM 解析选择器只用 XPath，不用 CSS 选择器。
+5. URL 相对路径必须可靠处理，优先基于 params.responseUrl 拼接，而不是盲目 config.host + result。
+6. 搜索方式必须来自首页 form、已成功抓取的搜索 URL、或真实搜索结果页结构；不要发明 POST 字段。
+7. 输出必须是单个合法 JSON 对象，不要 markdown、不要解释文字、不要注释。
+8. 可选模块必须有明确证据才补全：分类/排行列表补 bookWorld，书单/专题页面补 shudan，评论入口或评论列表补 shuping，相关搜索/联想词补 relatedWord；只有入口标题没有列表结构时不要补。
+9. 如果 HTML 明确是漫画 / 音频 / 视频站点，sourceType 要跟随真实站点类型，不要一律写 text。
 
 ━━━ 顶层结构模板 ━━━
 
@@ -386,68 +801,152 @@ requestFilters 三种格式（moreKeys.requestFilters）：
   格式三 换行字符串："玄幻::1\\n仙侠::2\\n言情::3"    → value 替换 %@filter；多 key 时加 _keyName 行分隔
 
 ━━━ 输出要求 ━━━
-只输出一个合法 JSON 对象，不含任何解释文字、markdown 代码块或注释。`;
+只输出一个合法 JSON 对象，不含任何解释文字、markdown 代码块或注释。
+必须执行自检：
+- searchBook.requestInfo 使用真实搜索 URL 或首页 form 推导。
+- searchBook.list 是每本书的容器，不是整个列表外壳。
+- detailUrl、chapterList.url 若为相对链接，必须用 ||@js: 基于 params.responseUrl 或 config.host 转绝对 URL。
+- chapterList 不要把“最新章节/相关推荐/倒序按钮”等非章节项当章节；必要时使用 moreKeys.skipCount。
+- chapterContent.content 选正文容器，广告过滤写在 content 的 |@js:，不要输出 filter 字段。
+- 字段名必须是 status、lastChapterTitle，不能输出 state、lastChapter。
+- shudanDetail、shupingList、shupingHome、searchShudan、relatedWord 至少保留 { "actionID": "...", "parserID": "DOM" } 壳。`;
 }
 
 async function callLLM(
   config: AiConfig,
   systemPrompt: string,
   userPrompt: string,
-  onChunk?: (text: string) => void,
+  onChunk?: (text: string, kind: StreamChunkKind) => void,
 ): Promise<string> {
   const baseUrl = config.baseUrl.replace(/\/$/, "");
+  const modes = buildRequestModes(config);
+  let lastError: unknown;
+
+  for (let index = 0; index < modes.length; index += 1) {
+    const mode = modes[index];
+    if (index > 0 && lastError && modes.length > 1) {
+      onChunk?.("", "reset");
+      onChunk?.("\n\n[已调整思考扩展参数并自动重试]\n\n", "notice");
+    }
+
+    try {
+      return await requestChatCompletion(
+        baseUrl,
+        config,
+        buildRequestBody(config, systemPrompt, userPrompt, !!onChunk, mode),
+        onChunk,
+      );
+    } catch (e) {
+      lastError = e;
+      if (
+        shouldRetryWithoutThinking(e) &&
+        (mode.kind !== "plain" || mode.temperature !== undefined)
+      ) {
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+async function requestChatCompletion(
+  baseUrl: string,
+  config: AiConfig,
+  body: ChatCompletionRequest,
+  onChunk?: (text: string, kind: StreamChunkKind) => void,
+): Promise<string> {
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.apiKey}`,
     },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-      stream: !!onChunk,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`LLM API 错误 ${res.status}: ${errText.slice(0, 200)}`);
+    throw new LlmApiError(res.status, errText);
   }
 
   if (!onChunk) {
-    const data = (await res.json()) as {
-      choices: Array<{ message: { content: string } }>;
-    };
+    const data = (await res.json()) as ChatCompletionResponse;
     return data.choices[0]?.message?.content ?? "";
   }
+
+  if (!res.body) throw new Error("LLM API 未返回响应流");
 
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let full = "";
+  let reasoningStarted = false;
+  let contentStarted = false;
+  let buffer = "";
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    for (const line of chunk.split("\n")) {
+    buffer += decoder.decode(value, { stream: true });
+    buffer = buffer.replace(/\r\n/g, "\n");
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      newlineIndex = buffer.indexOf("\n");
       if (!line.startsWith("data: ")) continue;
       const data = line.slice(6).trim();
       if (data === "[DONE]") continue;
       try {
-        const obj = JSON.parse(data) as {
-          choices: Array<{ delta: { content?: string } }>;
-        };
+        const obj = JSON.parse(data) as ChatCompletionResponse;
+        const reasoning = obj.choices[0]?.delta?.reasoning_content ?? "";
         const delta = obj.choices[0]?.delta?.content ?? "";
+        if (reasoning) {
+          if (!reasoningStarted) {
+            reasoningStarted = true;
+            onChunk("[思考]\n", "reasoning");
+          }
+          onChunk(reasoning, "reasoning");
+        }
         if (delta) {
+          if (reasoningStarted && !contentStarted) {
+            contentStarted = true;
+            onChunk("\n\n[输出]\n", "content");
+          }
           full += delta;
-          onChunk(delta);
+          onChunk(delta, "content");
         }
       } catch {
         // skip malformed SSE line
       }
+    }
+  }
+  const tail = buffer.trim();
+  if (tail.startsWith("data: ")) {
+    try {
+      const data = tail.slice(6).trim();
+      if (data && data !== "[DONE]") {
+        const obj = JSON.parse(data) as ChatCompletionResponse;
+        const reasoning = obj.choices[0]?.delta?.reasoning_content ?? "";
+        const delta = obj.choices[0]?.delta?.content ?? "";
+        if (reasoning) {
+          if (!reasoningStarted) {
+            reasoningStarted = true;
+            onChunk("[思考]\n", "reasoning");
+          }
+          onChunk(reasoning, "reasoning");
+        }
+        if (delta) {
+          if (reasoningStarted && !contentStarted) {
+            contentStarted = true;
+            onChunk("\n\n[输出]\n", "content");
+          }
+          full += delta;
+          onChunk(delta, "content");
+        }
+      }
+    } catch {
+      // ignore trailing partial frame
     }
   }
   return full;
@@ -517,6 +1016,9 @@ export function useAiSourceGenerator() {
 
     let homeHtml = "";
     let searchHtml = "";
+    let searchUrl = "";
+    let searchNote = "";
+    let searchFormHints: string[] = [];
     let bookDetailHtml = "";
     let bookDetailUrl = "";
     let chapterListHtml = "";
@@ -530,6 +1032,7 @@ export function useAiSourceGenerator() {
       setStep(0, { status: "running" });
       try {
         homeHtml = await fetchPage(siteUrl, proxy);
+        searchFormHints = extractSearchFormHints(homeHtml, siteUrl);
         setStep(0, { status: "done", detail: `${homeHtml.length} 字符` });
       } catch (e) {
         setStep(0, { status: "error", detail: String(e) });
@@ -539,22 +1042,14 @@ export function useAiSourceGenerator() {
       // ── Step 1: Search ──────────────────────────────────
       setStep(1, { status: "running" });
       try {
-        const candidates = [
-          `${base.origin}/search.html?q=${encodeURIComponent(bookName)}`,
-          `${base.origin}/search?q=${encodeURIComponent(bookName)}`,
-          `${base.origin}/search?key=${encodeURIComponent(bookName)}`,
-          `${base.origin}/search?keyword=${encodeURIComponent(bookName)}`,
-          `${base.origin}/search?searchkey=${encodeURIComponent(bookName)}`,
-          `${base.origin}/modules/article/search.php?searchkey=${encodeURIComponent(bookName)}`,
-          `${base.origin}/s?key=${encodeURIComponent(bookName)}`,
-          `${base.origin}/so/${encodeURIComponent(bookName)}.html`,
-          `${base.origin}/search/${encodeURIComponent(bookName)}/`,
-        ];
-        for (const url of candidates) {
+        const candidates = buildSearchCandidates(homeHtml, siteUrl, bookName);
+        for (const candidate of candidates) {
           try {
-            const html = await fetchPage(url, proxy);
+            const html = await fetchPage(candidate.url, proxy);
             if (html.length > 500 && html.includes(bookName.slice(0, 2))) {
               searchHtml = html;
+              searchUrl = candidate.url;
+              searchNote = candidate.note;
               break;
             }
           } catch {
@@ -564,8 +1059,8 @@ export function useAiSourceGenerator() {
         setStep(1, {
           status: "done",
           detail: searchHtml
-            ? `${searchHtml.length} 字符`
-            : "未找到搜索结果，跳过",
+            ? `${searchHtml.length} 字符 · ${searchNote}`
+            : `未找到搜索结果，尝试 ${candidates.length} 个候选`,
         });
       } catch {
         setStep(1, { status: "done", detail: "跳过" });
@@ -575,7 +1070,7 @@ export function useAiSourceGenerator() {
       setStep(2, { status: "running" });
       if (searchHtml) {
         try {
-          bookDetailUrl = findBookUrl(searchHtml, siteUrl) ?? "";
+          bookDetailUrl = findBookUrl(searchHtml, searchUrl || siteUrl, bookName) ?? "";
           if (bookDetailUrl) {
             bookDetailHtml = await fetchPage(bookDetailUrl, proxy);
             setStep(2, { status: "done", detail: bookDetailUrl });
@@ -645,7 +1140,8 @@ export function useAiSourceGenerator() {
       setStep(4, { status: "running" });
       if (chapterListHtml) {
         try {
-          firstChapterUrl = findFirstChapterUrl(chapterListHtml, siteUrl) ?? "";
+          firstChapterUrl =
+            findFirstChapterUrl(chapterListHtml, chapterListUrl || siteUrl) ?? "";
           if (firstChapterUrl) {
             chapterHtml = await fetchPage(firstChapterUrl, proxy);
             adCandidates = extractAdCandidates(chapterHtml);
@@ -672,47 +1168,54 @@ export function useAiSourceGenerator() {
       const parts: string[] = [];
       parts.push(`站点主 URL: ${siteUrl}`);
       parts.push(
-        `\n\n【首页 HTML】（分析网站结构、编码、导航等）\n${cleanHtml(homeHtml, 8000)}`,
+        `\n\n【站点首页 HTML】\n${cleanHtml(homeHtml, 8000)}`,
+      );
+      parts.push(
+        `\n\n【首页搜索线索】\n- 表单线索: ${searchFormHints.length ? searchFormHints.join(" | ") : "无"}\n- 搜索候选数: ${buildSearchCandidates(homeHtml, siteUrl, bookName).length}`,
       );
 
       if (searchHtml) {
         parts.push(
-          `\n\n【搜索《${bookName}》结果页 HTML】（用于推导 searchBook 选择器）\n${cleanHtml(searchHtml, 8000)}`,
+          `\n\n【已命中的搜索结果页】\n- URL: ${searchUrl}\n- 说明: ${searchNote}\n${cleanHtml(searchHtml, 8000)}`,
         );
       }
 
-      if (bookDetailHtml && bookDetailHtml !== chapterListHtml) {
+      if (bookDetailHtml) {
         parts.push(
-          `\n\n【书籍详情页 HTML】（URL: ${bookDetailUrl}）（用于推导 bookDetail 选择器）\n${cleanHtml(bookDetailHtml, 6000)}`,
+          `\n\n【书籍详情页 HTML】\n- URL: ${bookDetailUrl}\n${cleanHtml(bookDetailHtml, 6000)}`,
         );
       }
 
       if (chapterListHtml) {
-        const isSame = chapterListHtml === bookDetailHtml;
         parts.push(
-          `\n\n【${isSame ? "书籍详情 + 章节列表" : "章节列表"}页 HTML】（URL: ${chapterListUrl}）\n${cleanHtml(chapterListHtml, 8000)}`,
+          `\n\n【章节列表页 HTML】\n- URL: ${chapterListUrl}\n${cleanHtml(chapterListHtml, 8000)}`,
         );
       }
 
       if (chapterHtml) {
         parts.push(
-          `\n\n【第一章正文 HTML】（URL: ${firstChapterUrl}）（重点分析正文选择器和广告过滤词）\n${cleanHtml(chapterHtml, 8000)}`,
+          `\n\n【第一章正文 HTML】\n- URL: ${firstChapterUrl}\n${cleanHtml(chapterHtml, 8000)}`,
         );
       }
 
       if (adCandidates.length > 0) {
         parts.push(
-          `\n\n【从第一章正文提取的疑似广告文本行（请对照正文 HTML 确认后填入 filter 字段）】\n${adCandidates.slice(0, 20).join("\n")}`,
+          `\n\n【疑似广告/噪声文本】\n${adCandidates.slice(0, 20).join("\n")}`,
         );
       }
 
-      parts.push(`\n\n请根据以上真实页面 HTML 生成完整香色闺阁书源 JSON。
-注意：
-1. 所有选择器必须基于真实 HTML 推导，不要凭空猜测
-2. 正文广告过滤：在 content 选择器末尾用 |@js: 做 replace 处理，不存在 filter 字段
-3. 若章节列表与书籍详情同页，chapterList 不加 requestInfo 字段
-4. 若章节 URL 是相对路径，在 url 规则末尾加 "||@js:\\nreturn config.host + result;" 或 "||@js:\\nreturn params.responseUrl.replace(/\\/[^\\/]*$/, '') + '/' + result;"
-5. 字段名：status（✓）不是 state（✗），lastChapterTitle（✓）不是 lastChapter（✗）`);
+      parts.push(`\n\n任务：
+请根据以上证据生成一个可直接导入的完整香色闺阁书源 JSON。
+优先级：
+1. 正确性高于覆盖率。
+2. 先保证 searchBook / bookDetail / chapterList / chapterContent 可用。
+3. 只有在页面证据充分时再补 bookWorld、shudan、shuping、relatedWord。
+4. 遇到相对路径，优先用 ||@js: 基于 params.responseUrl 处理。
+5. 章节列表和正文中出现的“上一页/下一页/目录/最新章节/加入书架/推荐票”等噪声要排除。
+6. 正文广告过滤必须写进 content 的 |@js:，不要使用 filter 字段。
+7. 字段命名必须严格遵守文档，尤其是 status、lastChapterTitle、sourceType、httpHeaders。
+8. 若某规则没有足够证据，宁可输出空壳，也不要猜。
+`);
 
       let llmText = "";
       try {
@@ -720,7 +1223,11 @@ export function useAiSourceGenerator() {
           aiConfig,
           buildSystemPrompt(),
           parts.join(""),
-          (chunk) => {
+          (chunk, kind) => {
+            if (kind === "reset") {
+              streamText.value = "";
+              return;
+            }
             streamText.value += chunk;
           },
         );
@@ -746,13 +1253,7 @@ export function useAiSourceGenerator() {
         );
       }
 
-      const warnings: string[] = [];
-      if (!raw.sourceName) {
-        raw.sourceName = base.hostname;
-        warnings.push("sourceName 缺失，已用域名代替");
-      }
-      if (!raw.sourceUrl) raw.sourceUrl = siteUrl;
-      if (raw.enable === undefined) raw.enable = 1;
+      const warnings = validateGeneratedSource(raw, base, siteUrl);
 
       const out: GeneratedSource = {
         raw,
